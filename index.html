@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calendar Event Creator</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#2196F3">
+    <link rel="icon" type="image/png" sizes="192x192" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%232196F3'/><text y='70' font-size='60' fill='white'>📅</text></svg>">
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+            font-size: 24px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #555;
+        }
+        
+        input, select, textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: #2196F3;
+        }
+        
+        .time-group {
+            display: flex;
+            gap: 10px;
+            align-items: end;
+        }
+        
+        .time-input {
+            flex: 1;
+        }
+        
+        .ampm-select {
+            flex: 0 0 80px;
+        }
+        
+        button {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #2196F3, #1976D2);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 18px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(33, 150, 243, 0.3);
+        }
+        
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+            font-weight: 600;
+        }
+        
+        .success {
+            background: #e8f5e8;
+            color: #2e7d32;
+            border: 1px solid #c8e6c9;
+        }
+        
+        .error {
+            background: #ffebee;
+            color: #c62828;
+            border: 1px solid #ffcdd2;
+        }
+        
+        .loading {
+            background: #e3f2fd;
+            color: #1565c0;
+            border: 1px solid #bbdefb;
+        }
+        
+        #signInSection {
+            text-align: center;
+            padding: 40px 20px;
+        }
+        
+        #signInSection h2 {
+            margin-bottom: 20px;
+            color: #333;
+        }
+        
+        #signInSection p {
+            margin-bottom: 30px;
+            color: #666;
+            line-height: 1.6;
+        }
+        
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <!-- Sign In Section -->
+    <div id="signInSection" class="container">
+        <h2>🔐 Sign In to Google Calendar</h2>
+        <p>This app needs access to your Google Calendar to create events and reminders.</p>
+        <button id="signInButton">Sign In with Google</button>
+        <div id="authStatus" class="status hidden"></div>
+    </div>
+
+    <!-- Main App Section -->
+    <div id="appSection" class="container hidden">
+        <h1>📅 Calendar Event Creator</h1>
+        
+        <form id="eventForm">
+            <div class="form-group">
+                <label for="title">Event Title</label>
+                <input type="text" id="title" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="description">Description</label>
+                <textarea id="description" rows="3"></textarea>
+            </div>
+            
+            <div class="form-group">
+                <label for="date">Date</label>
+                <input type="date" id="date" required>
+            </div>
+            
+            <div class="form-group">
+                <label>Start Time</label>
+                <div class="time-group">
+                    <input type="time" id="startTime" class="time-input" value="09:00" required>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label>End Time</label>
+                <div class="time-group">
+                    <input type="time" id="endTime" class="time-input" value="10:00" required>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label for="reminder">Reminder (minutes before)</label>
+                <input type="number" id="reminder" value="30" min="0">
+            </div>
+            
+            <div class="form-group">
+                <label for="recurrence">Repeat Reminders</label>
+                <select id="recurrence">
+                    <option value="none">None</option>
+                    <option value="daily">Daily (until event)</option>
+                    <option value="weekly">Weekly (1 week before)</option>
+                </select>
+            </div>
+            
+            <button type="submit" id="createButton">Create Event</button>
+        </form>
+        
+        <div id="status" class="status hidden"></div>
+        
+        <button id="signOutButton" style="margin-top: 20px; background: #666;">Sign Out</button>
+    </div>
+
+    <!-- Google Calendar API -->
+    <script src="https://apis.google.com/js/api.js"></script>
+    <script src="https://accounts.google.com/gsi/client"></script>
+    
+    <script>
+        // Your Google API configuration
+        const CLIENT_ID = 'YOUR_CLIENT_ID_HERE'; // Replace with your actual client ID
+        const API_KEY = 'YOUR_API_KEY_HERE'; // Replace with your actual API key
+        const DISCOVERY_DOC = 'https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest';
+        const SCOPES = 'https://www.googleapis.com/auth/calendar';
+
+        let tokenClient;
+        let gapiInited = false;
+        let gisInited = false;
+
+        // Initialize Google APIs
+        function gapiLoaded() {
+            gapi.load('client', initializeGapiClient);
+        }
+
+        async function initializeGapiClient() {
+            await gapi.client.init({
+                apiKey: API_KEY,
+                discoveryDocs: [DISCOVERY_DOC],
+            });
+            gapiInited = true;
+            maybeEnableButtons();
+        }
+
+        function gisLoaded() {
+            tokenClient = google.accounts.oauth2.initTokenClient({
+                client_id: CLIENT_ID,
+                scope: SCOPES,
+                callback: (resp) => {
+                    if (resp.error !== undefined) {
+                        showStatus('Authentication failed: ' + resp.error, 'error');
+                        return;
+                    }
+                    showStatus('Successfully signed in!', 'success');
+                    showAppSection();
+                },
+            });
+            gisInited = true;
+            maybeEnableButtons();
+        }
+
+        function maybeEnableButtons() {
+            if (gapiInited && gisInited) {
+                document.getElementById('signInButton').disabled = false;
+            }
+        }
+
+        function showStatus(message, type) {
+            const authStatus = document.getElementById('authStatus');
+            const status = document.getElementById('status');
+            const statusEl = authStatus.classList.contains('hidden') ? status : authStatus;
+            
+            statusEl.textContent = message;
+            statusEl.className = `status ${type}`;
+            statusEl.classList.remove('hidden');
+            
+            if (type === 'success') {
+                setTimeout(() => {
+                    statusEl.classList.add('hidden');
+                }, 3000);
+            }
+        }
+
+        function showAppSection() {
+            document.getElementById('signInSection').classList.add('hidden');
+            document.getElementById('appSection').classList.remove('hidden');
+            
+            // Set today's date as default
+            const today = new Date().toISOString().split('T')[0];
+            document.getElementById('date').value = today;
+        }
+
+        function handleSignIn() {
+            tokenClient.callback = async (resp) => {
+                if (resp.error !== undefined) {
+                    showStatus('Authentication failed', 'error');
+                    return;
+                }
+                showStatus('Successfully signed in!', 'success');
+                showAppSection();
+            };
+
+            if (gapi.client.getToken() === null) {
+                tokenClient.requestAccessToken({prompt: 'consent'});
+            } else {
+                tokenClient.requestAccessToken({prompt: ''});
+            }
+        }
+
+        function handleSignOut() {
+            const token = gapi.client.getToken();
+            if (token !== null) {
+                google.accounts.oauth2.revoke(token.access_token);
+                gapi.client.setToken('');
+                document.getElementById('signInSection').classList.remove('hidden');
+                document.getElementById('appSection').classList.add('hidden');
+                showStatus('Signed out successfully', 'success');
+            }
+        }
+
+        async function createEvent(eventData) {
+            try {
+                const response = await gapi.client.calendar.events.insert({
+                    calendarId: 'primary',
+                    resource: eventData
+                });
+                return response.result;
+            } catch (error) {
+                throw error;
+            }
+        }
+
+        async function createReminderEvents(title, description, eventDate, recurrence) {
+            const today = new Date();
+            const eventDateObj = new Date(eventDate);
+            
+            if (recurrence === 'daily') {
+                // Create daily reminders from today until event date
+                const current = new Date(today);
+                while (current < eventDateObj) {
+                    const reminderEvent = {
+                        summary: `🔔 Reminder: ${title}`,
+                        description: `Daily reminder for: ${description}\n\nEvent Date: ${eventDateObj.toDateString()}`,
+                        start: {
+                            dateTime: new Date(current.getFullYear(), current.getMonth(), current.getDate(), 9, 0).toISOString(),
+                        },
+                        end: {
+                            dateTime: new Date(current.getFullYear(), current.getMonth(), current.getDate(), 9, 1).toISOString(),
+                        },
+                        reminders: {
+                            useDefault: false,
+                            overrides: [
+                                {method: 'popup', minutes: 0}
+                            ]
+                        }
+                    };
+                    
+                    await createEvent(reminderEvent);
+                    current.setDate(current.getDate() + 1);
+                }
+            } else if (recurrence === 'weekly') {
+                // Create one reminder 1 week before
+                const weekBefore = new Date(eventDateObj);
+                weekBefore.setDate(weekBefore.getDate() - 7);
+                
+                if (weekBefore >= today) {
+                    const weeklyEvent = {
+                        summary: `🗓️ Weekly Reminder: ${title}`,
+                        description: `One week reminder for: ${description}\n\nEvent Date: ${eventDateObj.toDateString()}`,
+                        start: {
+                            dateTime: new Date(weekBefore.getFullYear(), weekBefore.getMonth(), weekBefore.getDate(), 9, 0).toISOString(),
+                        },
+                        end: {
+                            dateTime: new Date(weekBefore.getFullYear(), weekBefore.getMonth(), weekBefore.getDate(), 9, 1).toISOString(),
+                        },
+                        reminders: {
+                            useDefault: false,
+                            overrides: [
+                                {method: 'popup', minutes: 0}
+                            ]
+                        }
+                    };
+                    
+                    await createEvent(weeklyEvent);
+                }
+            }
+        }
+
+        async function handleFormSubmit(e) {
+            e.preventDefault();
+            
+            const button = document.getElementById('createButton');
+            button.disabled = true;
+            button.textContent = 'Creating...';
+            showStatus('Creating event...', 'loading');
+            
+            try {
+                const title = document.getElementById('title').value;
+                const description = document.getElementById('description').value;
+                const date = document.getElementById('date').value;
+                const startTime = document.getElementById('startTime').value;
+                const endTime = document.getElementById('endTime').value;
+                const reminder = parseInt(document.getElementById('reminder').value);
+                const recurrence = document.getElementById('recurrence').value;
+                
+                // Create start and end datetime
+                const startDateTime = new Date(`${date}T${startTime}`);
+                const endDateTime = new Date(`${date}T${endTime}`);
+                
+                if (endDateTime <= startDateTime) {
+                    throw new Error('End time must be after start time');
+                }
+                
+                // Main event
+                const eventData = {
+                    summary: title,
+                    description: description,
+                    start: {
+                        dateTime: startDateTime.toISOString(),
+                    },
+                    end: {
+                        dateTime: endDateTime.toISOString(),
+                    },
+                    reminders: {
+                        useDefault: false,
+                        overrides: [
+                            {method: 'popup', minutes: reminder},
+                            {method: 'email', minutes: reminder}
+                        ]
+                    }
+                };
+                
+                // Create main event
+                const mainEvent = await createEvent(eventData);
+                
+                // Create reminder events if requested
+                if (recurrence !== 'none') {
+                    await createReminderEvents(title, description, date, recurrence);
+                }
+                
+                showStatus(`Event created successfully! ${recurrence !== 'none' ? 'Reminders added.' : ''}`, 'success');
+                document.getElementById('eventForm').reset();
+                document.getElementById('date').value = new Date().toISOString().split('T')[0];
+                
+            } catch (error) {
+                showStatus('Error: ' + error.message, 'error');
+            } finally {
+                button.disabled = false;
+                button.textContent = 'Create Event';
+            }
+        }
+
+        // Event listeners
+        document.getElementById('signInButton').addEventListener('click', handleSignIn);
+        document.getElementById('signOutButton').addEventListener('click', handleSignOut);
+        document.getElementById('eventForm').addEventListener('submit', handleFormSubmit);
+
+        // Initialize when page loads
+        gapiLoaded();
+        gisLoaded();
+    </script>
+</body>
+</html>
