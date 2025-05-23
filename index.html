@@ -210,11 +210,11 @@
             </div>
             
             <div class="form-group">
-                <label for="recurrence">Repeat Reminders</label>
+                <label for="recurrence">Reminder Schedule</label>
                 <select id="recurrence">
-                    <option value="none">None</option>
-                    <option value="daily">Daily (until event)</option>
-                    <option value="weekly">Weekly (1 week before)</option>
+                    <option value="none">No additional reminders</option>
+                    <option value="daily">Daily reminders (from today until event)</option>
+                    <option value="weekly">One-time reminder (1 week before event)</option>
                 </select>
             </div>
             
@@ -549,62 +549,78 @@
             const today = new Date();
             const eventDateObj = new Date(eventDate);
             
-            debugLog(`Creating reminder events: ${recurrence} for ${title}`);
+            debugLog(`Creating recurring reminder: ${recurrence} for ${title}`);
             
             if (recurrence === 'daily') {
-                // Create daily reminders from today until event date
-                const current = new Date(today);
-                let reminderCount = 0;
+                // Create a single recurring daily reminder starting today until the event date
+                const reminderStartDate = new Date(today);
+                reminderStartDate.setHours(9, 0, 0, 0); // Set to 9 AM
                 
-                while (current < eventDateObj && reminderCount < 30) { // Limit to 30 reminders
-                    const reminderEvent = {
-                        summary: `🔔 Reminder: ${title}`,
-                        description: `Daily reminder for: ${description}\n\nEvent Date: ${eventDateObj.toDateString()}`,
+                // Calculate the end date (day before the event)
+                const reminderEndDate = new Date(eventDateObj);
+                reminderEndDate.setDate(reminderEndDate.getDate() - 1);
+                
+                if (reminderStartDate <= reminderEndDate) {
+                    const dailyReminderEvent = {
+                        summary: `🔔 Daily Reminder: ${title}`,
+                        description: `Daily reminder for upcoming event: ${description}\n\nEvent Date: ${eventDateObj.toDateString()}\n\nThis reminder will repeat daily until the event.`,
                         start: {
-                            dateTime: new Date(current.getFullYear(), current.getMonth(), current.getDate(), 9, 0).toISOString(),
+                            dateTime: reminderStartDate.toISOString(),
+                            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
                         },
                         end: {
-                            dateTime: new Date(current.getFullYear(), current.getMonth(), current.getDate(), 9, 1).toISOString(),
+                            dateTime: new Date(reminderStartDate.getTime() + 15 * 60000).toISOString(), // 15 minutes long
+                            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
                         },
+                        recurrence: [
+                            `RRULE:FREQ=DAILY;UNTIL=${reminderEndDate.toISOString().replace(/[-:]/g, '').split('.')[0]}Z`
+                        ],
                         reminders: {
                             useDefault: false,
                             overrides: [
-                                {method: 'popup', minutes: 0}
+                                {method: 'popup', minutes: 0},
+                                {method: 'email', minutes: 0}
                             ]
                         }
                     };
                     
-                    await createEvent(reminderEvent);
-                    current.setDate(current.getDate() + 1);
-                    reminderCount++;
+                    await createEvent(dailyReminderEvent);
+                    debugLog('Created daily recurring reminder event');
+                } else {
+                    debugLog('Event is today or in the past, no daily reminders needed');
                 }
                 
-                debugLog(`Created ${reminderCount} daily reminder events`);
             } else if (recurrence === 'weekly') {
-                // Create one reminder 1 week before
+                // Create a single reminder 1 week before the event
                 const weekBefore = new Date(eventDateObj);
                 weekBefore.setDate(weekBefore.getDate() - 7);
+                weekBefore.setHours(9, 0, 0, 0); // Set to 9 AM
                 
                 if (weekBefore >= today) {
                     const weeklyEvent = {
                         summary: `🗓️ Weekly Reminder: ${title}`,
-                        description: `One week reminder for: ${description}\n\nEvent Date: ${eventDateObj.toDateString()}`,
+                        description: `One week reminder for: ${description}\n\nEvent Date: ${eventDateObj.toDateString()}\n\nYour event is in exactly one week!`,
                         start: {
-                            dateTime: new Date(weekBefore.getFullYear(), weekBefore.getMonth(), weekBefore.getDate(), 9, 0).toISOString(),
+                            dateTime: weekBefore.toISOString(),
+                            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
                         },
                         end: {
-                            dateTime: new Date(weekBefore.getFullYear(), weekBefore.getMonth(), weekBefore.getDate(), 9, 1).toISOString(),
+                            dateTime: new Date(weekBefore.getTime() + 15 * 60000).toISOString(), // 15 minutes long
+                            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
                         },
                         reminders: {
                             useDefault: false,
                             overrides: [
-                                {method: 'popup', minutes: 0}
+                                {method: 'popup', minutes: 0},
+                                {method: 'email', minutes: 0}
                             ]
                         }
                     };
                     
                     await createEvent(weeklyEvent);
                     debugLog('Created weekly reminder event');
+                } else {
+                    debugLog('Event is less than a week away, no weekly reminder needed');
                 }
             }
         }
