@@ -155,6 +155,8 @@
             font-family: monospace;
             font-size: 12px;
             color: #666;
+            max-height: 200px;
+            overflow-y: auto;
         }
     </style>
 </head>
@@ -231,21 +233,21 @@
     <script>
         // Your Google API configuration
         const CLIENT_ID = '517728613849-l39o30ebslg3f3rdnp65ot9nmuppi698.apps.googleusercontent.com';
-        
-        // For now, let's test without API key to see if auth works
-        const API_KEY = ''; // We'll handle this differently
+        const API_KEY = 'YOUR_API_KEY_HERE'; // You need to set this if you want to use it
         const DISCOVERY_DOC = 'https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest';
         const SCOPES = 'https://www.googleapis.com/auth/calendar';
 
         let tokenClient;
         let gapiInited = false;
         let gisInited = false;
+        let isSignedIn = false;
 
         function debugLog(message) {
             console.log(message);
             const debugInfo = document.getElementById('debugInfo');
             if (debugInfo) {
                 debugInfo.innerHTML += new Date().toLocaleTimeString() + ': ' + message + '<br>';
+                debugInfo.scrollTop = debugInfo.scrollHeight;
             }
         }
 
@@ -293,12 +295,13 @@
             try {
                 debugLog('Initializing GAPI client...');
                 
-                // Initialize without API key first to test OAuth
+                // Initialize the client with discovery docs only
+                // The API key is optional for OAuth-authenticated requests
                 await gapi.client.init({
                     discoveryDocs: [DISCOVERY_DOC],
                 });
                 
-                debugLog('GAPI client initialized (without API key)');
+                debugLog('GAPI client initialized successfully');
                 gapiInited = true;
                 maybeEnableButtons();
             } catch (error) {
@@ -319,13 +322,20 @@
                     client_id: CLIENT_ID,
                     scope: SCOPES,
                     callback: (resp) => {
-                        debugLog('Token response received: ' + JSON.stringify(resp));
+                        debugLog('Token response received');
                         if (resp.error !== undefined) {
                             debugLog('Auth error: ' + resp.error);
                             showStatus('Authentication failed: ' + resp.error, 'error');
                             return;
                         }
+                        
                         debugLog('Authentication successful');
+                        debugLog('Access token received: ' + (resp.access_token ? 'Yes' : 'No'));
+                        
+                        // Set the token in gapi client
+                        gapi.client.setToken(resp);
+                        isSignedIn = true;
+                        
                         showStatus('Successfully signed in!', 'success');
                         showAppSection();
                     },
@@ -396,6 +406,12 @@
                 return;
             }
 
+            if (!gapiInited) {
+                debugLog('GAPI not initialized');
+                showStatus('Google API not ready. Please refresh the page.', 'error');
+                return;
+            }
+
             try {
                 debugLog('Requesting access token...');
                 tokenClient.requestAccessToken({prompt: 'consent'});
@@ -410,6 +426,7 @@
             if (token !== null) {
                 google.accounts.oauth2.revoke(token.access_token);
                 gapi.client.setToken('');
+                isSignedIn = false;
                 const signInSection = document.getElementById('signInSection');
                 const appSection = document.getElementById('appSection');
                 if (signInSection) signInSection.classList.remove('hidden');
@@ -419,13 +436,30 @@
         }
 
         async function createEvent(eventData) {
+            debugLog('Creating event with data: ' + JSON.stringify(eventData, null, 2));
+            
+            if (!isSignedIn) {
+                throw new Error('Not signed in');
+            }
+
+            if (!gapi.client.calendar) {
+                throw new Error('Calendar API not loaded');
+            }
+
             try {
                 const response = await gapi.client.calendar.events.insert({
                     calendarId: 'primary',
                     resource: eventData
                 });
+                
+                debugLog('Event created successfully: ' + JSON.stringify(response.result));
                 return response.result;
             } catch (error) {
+                debugLog('Error creating event: ' + error.message);
+                if (error.result && error.result.error) {
+                    debugLog('Detailed error: ' + JSON.stringify(error.result.error));
+                    throw new Error(error.result.error.message || 'Failed to create event');
+                }
                 throw error;
             }
         }
@@ -434,10 +468,14 @@
             const today = new Date();
             const eventDateObj = new Date(eventDate);
             
+            debugLog(`Creating reminder events: ${recurrence} for ${title}`);
+            
             if (recurrence === 'daily') {
                 // Create daily reminders from today until event date
                 const current = new Date(today);
-                while (current < eventDateObj) {
+                let reminderCount = 0;
+                
+                while (current < eventDateObj && reminderCount < 30) { // Limit to 30 reminders
                     const reminderEvent = {
                         summary: `🔔 Reminder: ${title}`,
                         description: `Daily reminder for: ${description}\n\nEvent Date: ${eventDateObj.toDateString()}`,
@@ -457,7 +495,10 @@
                     
                     await createEvent(reminderEvent);
                     current.setDate(current.getDate() + 1);
+                    reminderCount++;
                 }
+                
+                debugLog(`Created ${reminderCount} daily reminder events`);
             } else if (recurrence === 'weekly') {
                 // Create one reminder 1 week before
                 const weekBefore = new Date(eventDateObj);
@@ -482,12 +523,15 @@
                     };
                     
                     await createEvent(weeklyEvent);
+                    debugLog('Created weekly reminder event');
                 }
             }
         }
 
         async function handleFormSubmit(e) {
             e.preventDefault();
+            
+            debugLog('Form submitted');
             
             const button = document.getElementById('createButton');
             if (button) {
@@ -497,17 +541,35 @@
             showStatus('Creating event...', 'loading');
             
             try {
-                const title = document.getElementById('title').value;
-                const description = document.getElementById('description').value;
+                // Check if user is signed in
+                if (!isSignedIn) {
+                    throw new Error('Please sign in first');
+                }
+
+                // Get form values
+                const title = document.getElementById('title').value.trim();
+                const description = document.getElementById('description').value.trim();
                 const date = document.getElementById('date').value;
                 const startTime = document.getElementById('startTime').value;
                 const endTime = document.getElementById('endTime').value;
-                const reminder = parseInt(document.getElementById('reminder').value);
+                const reminder = parseInt(document.getElementById('reminder').value) || 30;
                 const recurrence = document.getElementById('recurrence').value;
                 
-                // Create start and end datetime
+                debugLog(`Form values: title=${title}, date=${date}, startTime=${startTime}, endTime=${endTime}`);
+                
+                if (!title) {
+                    throw new Error('Please enter an event title');
+                }
+                
+                if (!date) {
+                    throw new Error('Please select a date');
+                }
+                
+                // Create start and end datetime with timezone
                 const startDateTime = new Date(`${date}T${startTime}`);
                 const endDateTime = new Date(`${date}T${endTime}`);
+                
+                debugLog(`DateTime objects: start=${startDateTime.toISOString()}, end=${endDateTime.toISOString()}`);
                 
                 if (endDateTime <= startDateTime) {
                     throw new Error('End time must be after start time');
@@ -519,9 +581,11 @@
                     description: description,
                     start: {
                         dateTime: startDateTime.toISOString(),
+                        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
                     },
                     end: {
                         dateTime: endDateTime.toISOString(),
+                        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
                     },
                     reminders: {
                         useDefault: false,
@@ -532,22 +596,32 @@
                     }
                 };
                 
+                debugLog('Creating main event...');
+                
                 // Create main event
                 const mainEvent = await createEvent(eventData);
+                debugLog('Main event created with ID: ' + mainEvent.id);
                 
                 // Create reminder events if requested
                 if (recurrence !== 'none') {
+                    debugLog('Creating reminder events...');
                     await createReminderEvents(title, description, date, recurrence);
                 }
                 
                 showStatus(`Event created successfully! ${recurrence !== 'none' ? 'Reminders added.' : ''}`, 'success');
+                
+                // Reset form
                 document.getElementById('eventForm').reset();
                 const dateInput = document.getElementById('date');
                 if (dateInput) {
                     dateInput.value = new Date().toISOString().split('T')[0];
                 }
+                document.getElementById('startTime').value = '09:00';
+                document.getElementById('endTime').value = '10:00';
+                document.getElementById('reminder').value = '30';
                 
             } catch (error) {
+                debugLog('Form submission error: ' + error.message);
                 showStatus('Error: ' + error.message, 'error');
             } finally {
                 if (button) {
@@ -559,7 +633,7 @@
 
         // Wait for DOM to load, then check for scripts
         document.addEventListener('DOMContentLoaded', function() {
-            debugLog('DOM loaded, checking for scripts...');
+            debugLog('DOM loaded, setting up event listeners...');
             
             // Set up event listeners
             const signInButton = document.getElementById('signInButton');
@@ -568,12 +642,15 @@
             
             if (signInButton) {
                 signInButton.addEventListener('click', handleSignIn);
+                debugLog('Sign-in button listener added');
             }
             if (signOutButton) {
                 signOutButton.addEventListener('click', handleSignOut);
+                debugLog('Sign-out button listener added');
             }
             if (eventForm) {
                 eventForm.addEventListener('submit', handleFormSubmit);
+                debugLog('Form submit listener added');
             }
             
             // Check if scripts are loaded
