@@ -302,10 +302,25 @@
                 });
                 
                 debugLog('GAPI client initialized successfully');
+                
+                // Check if calendar API is loaded
+                debugLog('Checking calendar API availability...');
+                setTimeout(() => {
+                    debugLog('gapi.client available: ' + (gapi.client ? 'Yes' : 'No'));
+                    debugLog('gapi.client.calendar available: ' + (gapi.client.calendar ? 'Yes' : 'No'));
+                    if (gapi.client.calendar) {
+                        debugLog('Calendar API methods available: ' + Object.keys(gapi.client.calendar));
+                        if (gapi.client.calendar.events) {
+                            debugLog('Events API methods: ' + Object.keys(gapi.client.calendar.events));
+                        }
+                    }
+                }, 1000);
+                
                 gapiInited = true;
                 maybeEnableButtons();
             } catch (error) {
                 debugLog('GAPI initialization error: ' + error.message);
+                debugLog('Error stack: ' + error.stack);
                 showStatus('API initialization failed: ' + error.message, 'error');
             }
         }
@@ -331,9 +346,18 @@
                         
                         debugLog('Authentication successful');
                         debugLog('Access token received: ' + (resp.access_token ? 'Yes' : 'No'));
+                        debugLog('Token type: ' + resp.token_type);
+                        debugLog('Expires in: ' + resp.expires_in);
+                        debugLog('Scope: ' + resp.scope);
                         
                         // Set the token in gapi client
+                        debugLog('Setting token in gapi client...');
                         gapi.client.setToken(resp);
+                        
+                        // Verify token was set
+                        const setToken = gapi.client.getToken();
+                        debugLog('Token set successfully: ' + (setToken ? 'Yes' : 'No'));
+                        
                         isSignedIn = true;
                         
                         showStatus('Successfully signed in!', 'success');
@@ -395,6 +419,27 @@
                 const today = new Date().toISOString().split('T')[0];
                 dateInput.value = today;
             }
+            
+            // Test Calendar API access
+            testCalendarAccess();
+        }
+
+        async function testCalendarAccess() {
+            debugLog('Testing Calendar API access...');
+            try {
+                // Try to list calendars to verify API access
+                const response = await gapi.client.calendar.calendarList.list({
+                    maxResults: 1
+                });
+                debugLog('Calendar API test successful');
+                debugLog('Calendar list response: ' + JSON.stringify(response.result, null, 2));
+            } catch (error) {
+                debugLog('Calendar API test failed: ' + error.message);
+                if (error.result) {
+                    debugLog('Test error details: ' + JSON.stringify(error.result, null, 2));
+                }
+                showStatus('Warning: Calendar API test failed - ' + error.message, 'error');
+            }
         }
 
         function handleSignIn() {
@@ -438,29 +483,65 @@
         async function createEvent(eventData) {
             debugLog('Creating event with data: ' + JSON.stringify(eventData, null, 2));
             
+            // Check authentication status
+            const token = gapi.client.getToken();
+            debugLog('Current token: ' + (token ? 'Present' : 'Missing'));
+            if (token) {
+                debugLog('Token details: ' + JSON.stringify(token, null, 2));
+            }
+            
             if (!isSignedIn) {
                 throw new Error('Not signed in');
             }
 
+            if (!token) {
+                throw new Error('No authentication token available');
+            }
+
+            // Check if gapi.client.calendar is available
+            debugLog('gapi.client available: ' + (gapi.client ? 'Yes' : 'No'));
+            debugLog('gapi.client.calendar available: ' + (gapi.client.calendar ? 'Yes' : 'No'));
+            
             if (!gapi.client.calendar) {
                 throw new Error('Calendar API not loaded');
             }
 
             try {
+                debugLog('Attempting to call calendar.events.insert...');
+                
                 const response = await gapi.client.calendar.events.insert({
                     calendarId: 'primary',
                     resource: eventData
                 });
                 
-                debugLog('Event created successfully: ' + JSON.stringify(response.result));
+                debugLog('Raw response: ' + JSON.stringify(response, null, 2));
+                debugLog('Response status: ' + response.status);
+                debugLog('Response result: ' + JSON.stringify(response.result, null, 2));
+                
+                if (!response.result) {
+                    throw new Error('No result in API response');
+                }
+                
                 return response.result;
             } catch (error) {
-                debugLog('Error creating event: ' + error.message);
-                if (error.result && error.result.error) {
-                    debugLog('Detailed error: ' + JSON.stringify(error.result.error));
-                    throw new Error(error.result.error.message || 'Failed to create event');
+                debugLog('Error type: ' + typeof error);
+                debugLog('Error message: ' + error.message);
+                debugLog('Error stack: ' + error.stack);
+                
+                if (error.result) {
+                    debugLog('Error result: ' + JSON.stringify(error.result, null, 2));
+                    if (error.result.error) {
+                        debugLog('API error details: ' + JSON.stringify(error.result.error, null, 2));
+                        throw new Error(`API Error: ${error.result.error.message} (Code: ${error.result.error.code})`);
+                    }
                 }
-                throw error;
+                
+                if (error.status) {
+                    debugLog('HTTP Status: ' + error.status);
+                    throw new Error(`HTTP Error ${error.status}: ${error.message}`);
+                }
+                
+                throw new Error(`Calendar API Error: ${error.message}`);
             }
         }
 
