@@ -225,13 +225,15 @@
     </div>
 
     <!-- Google Calendar API -->
-    <script src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
-    <script src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>
+    <script src="https://apis.google.com/js/api.js"></script>
+    <script src="https://accounts.google.com/gsi/client"></script>
     
     <script>
         // Your Google API configuration
         const CLIENT_ID = '517728613849-l39o30ebslg3f3rdnp65ot9nmuppi698.apps.googleusercontent.com';
-        const API_KEY = 'AIzaSyDllfhpeSrZZyuFDGNLSBTtOPSC9nI9Rdg'; // Replace with your actual API key
+        
+        // For now, let's test without API key to see if auth works
+        const API_KEY = ''; // We'll handle this differently
         const DISCOVERY_DOC = 'https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest';
         const SCOPES = 'https://www.googleapis.com/auth/calendar';
 
@@ -242,33 +244,62 @@
         function debugLog(message) {
             console.log(message);
             const debugInfo = document.getElementById('debugInfo');
-            debugInfo.innerHTML += new Date().toLocaleTimeString() + ': ' + message + '<br>';
+            if (debugInfo) {
+                debugInfo.innerHTML += new Date().toLocaleTimeString() + ': ' + message + '<br>';
+            }
+        }
+
+        // Check if scripts loaded
+        function checkScriptsLoaded() {
+            debugLog('Checking if scripts are loaded...');
+            debugLog('gapi available: ' + (typeof gapi !== 'undefined'));
+            debugLog('google available: ' + (typeof google !== 'undefined'));
+            
+            if (typeof gapi !== 'undefined') {
+                gapiLoaded();
+            } else {
+                debugLog('GAPI not loaded, retrying in 1 second...');
+                setTimeout(checkScriptsLoaded, 1000);
+            }
+            
+            if (typeof google !== 'undefined') {
+                gisLoaded();
+            } else {
+                debugLog('GIS not loaded, retrying in 1 second...');
+                setTimeout(() => {
+                    if (typeof google !== 'undefined') {
+                        gisLoaded();
+                    }
+                }, 1000);
+            }
         }
 
         // Initialize Google APIs
         function gapiLoaded() {
-            debugLog('GAPI script loaded');
-            gapi.load('client', initializeGapiClient);
+            debugLog('GAPI script loaded, initializing...');
+            if (typeof gapi === 'undefined') {
+                debugLog('GAPI still not available');
+                return;
+            }
+            
+            try {
+                gapi.load('client', initializeGapiClient);
+            } catch (error) {
+                debugLog('Error loading GAPI client: ' + error.message);
+            }
         }
 
         async function initializeGapiClient() {
             try {
                 debugLog('Initializing GAPI client...');
                 
-                if (!API_KEY || API_KEY === 'YOUR_API_KEY_HERE') {
-                    throw new Error('API Key not configured. Please set your Google Calendar API key.');
-                }
-
+                // Initialize without API key first to test OAuth
                 await gapi.client.init({
-                    apiKey: API_KEY,
                     discoveryDocs: [DISCOVERY_DOC],
                 });
                 
-                // Explicitly load the Calendar API
-                await gapi.client.load('calendar', 'v3');
-                
+                debugLog('GAPI client initialized (without API key)');
                 gapiInited = true;
-                debugLog('GAPI client initialized successfully');
                 maybeEnableButtons();
             } catch (error) {
                 debugLog('GAPI initialization error: ' + error.message);
@@ -277,13 +308,18 @@
         }
 
         function gisLoaded() {
-            debugLog('GIS script loaded');
+            debugLog('GIS script loaded, initializing token client...');
+            if (typeof google === 'undefined') {
+                debugLog('Google object still not available');
+                return;
+            }
+
             try {
                 tokenClient = google.accounts.oauth2.initTokenClient({
                     client_id: CLIENT_ID,
                     scope: SCOPES,
                     callback: (resp) => {
-                        debugLog('Token response received');
+                        debugLog('Token response received: ' + JSON.stringify(resp));
                         if (resp.error !== undefined) {
                             debugLog('Auth error: ' + resp.error);
                             showStatus('Authentication failed: ' + resp.error, 'error');
@@ -295,7 +331,7 @@
                     },
                 });
                 gisInited = true;
-                debugLog('Token client initialized');
+                debugLog('Token client initialized successfully');
                 maybeEnableButtons();
             } catch (error) {
                 debugLog('GIS initialization error: ' + error.message);
@@ -307,35 +343,48 @@
             debugLog(`Checking initialization status: GAPI=${gapiInited}, GIS=${gisInited}`);
             if (gapiInited && gisInited) {
                 const signInButton = document.getElementById('signInButton');
-                signInButton.disabled = false;
-                signInButton.textContent = 'Sign In with Google';
-                debugLog('Sign-in button enabled');
+                if (signInButton) {
+                    signInButton.disabled = false;
+                    signInButton.textContent = 'Sign In with Google';
+                    debugLog('Sign-in button enabled');
+                    showStatus('Ready to sign in!', 'success');
+                }
+            } else {
+                debugLog('Still waiting for initialization...');
             }
         }
 
         function showStatus(message, type) {
             const authStatus = document.getElementById('authStatus');
             const status = document.getElementById('status');
-            const statusEl = authStatus.classList.contains('hidden') ? status : authStatus;
+            const statusEl = authStatus && !authStatus.classList.contains('hidden') ? authStatus : status;
             
-            statusEl.textContent = message;
-            statusEl.className = `status ${type}`;
-            statusEl.classList.remove('hidden');
-            
-            if (type === 'success') {
-                setTimeout(() => {
-                    statusEl.classList.add('hidden');
-                }, 3000);
+            if (statusEl) {
+                statusEl.textContent = message;
+                statusEl.className = `status ${type}`;
+                statusEl.classList.remove('hidden');
+                
+                if (type === 'success') {
+                    setTimeout(() => {
+                        statusEl.classList.add('hidden');
+                    }, 3000);
+                }
             }
         }
 
         function showAppSection() {
-            document.getElementById('signInSection').classList.add('hidden');
-            document.getElementById('appSection').classList.remove('hidden');
+            const signInSection = document.getElementById('signInSection');
+            const appSection = document.getElementById('appSection');
+            
+            if (signInSection) signInSection.classList.add('hidden');
+            if (appSection) appSection.classList.remove('hidden');
             
             // Set today's date as default
-            const today = new Date().toISOString().split('T')[0];
-            document.getElementById('date').value = today;
+            const dateInput = document.getElementById('date');
+            if (dateInput) {
+                const today = new Date().toISOString().split('T')[0];
+                dateInput.value = today;
+            }
         }
 
         function handleSignIn() {
@@ -348,13 +397,8 @@
             }
 
             try {
-                if (gapi.client.getToken() === null) {
-                    debugLog('Requesting new token with consent');
-                    tokenClient.requestAccessToken({prompt: 'consent'});
-                } else {
-                    debugLog('Requesting token refresh');
-                    tokenClient.requestAccessToken({prompt: ''});
-                }
+                debugLog('Requesting access token...');
+                tokenClient.requestAccessToken({prompt: 'consent'});
             } catch (error) {
                 debugLog('Sign-in error: ' + error.message);
                 showStatus('Sign-in failed: ' + error.message, 'error');
@@ -366,8 +410,10 @@
             if (token !== null) {
                 google.accounts.oauth2.revoke(token.access_token);
                 gapi.client.setToken('');
-                document.getElementById('signInSection').classList.remove('hidden');
-                document.getElementById('appSection').classList.add('hidden');
+                const signInSection = document.getElementById('signInSection');
+                const appSection = document.getElementById('appSection');
+                if (signInSection) signInSection.classList.remove('hidden');
+                if (appSection) appSection.classList.add('hidden');
                 showStatus('Signed out successfully', 'success');
             }
         }
@@ -444,8 +490,10 @@
             e.preventDefault();
             
             const button = document.getElementById('createButton');
-            button.disabled = true;
-            button.textContent = 'Creating...';
+            if (button) {
+                button.disabled = true;
+                button.textContent = 'Creating...';
+            }
             showStatus('Creating event...', 'loading');
             
             try {
@@ -494,23 +542,43 @@
                 
                 showStatus(`Event created successfully! ${recurrence !== 'none' ? 'Reminders added.' : ''}`, 'success');
                 document.getElementById('eventForm').reset();
-                document.getElementById('date').value = new Date().toISOString().split('T')[0];
+                const dateInput = document.getElementById('date');
+                if (dateInput) {
+                    dateInput.value = new Date().toISOString().split('T')[0];
+                }
                 
             } catch (error) {
                 showStatus('Error: ' + error.message, 'error');
             } finally {
-                button.disabled = false;
-                button.textContent = 'Create Event';
+                if (button) {
+                    button.disabled = false;
+                    button.textContent = 'Create Event';
+                }
             }
         }
 
-        // Event listeners
-        document.getElementById('signInButton').addEventListener('click', handleSignIn);
-        document.getElementById('signOutButton').addEventListener('click', handleSignOut);
-        document.getElementById('eventForm').addEventListener('submit', handleFormSubmit);
-
-        // Debug info on page load
-        debugLog('Page loaded, waiting for API initialization...');
+        // Wait for DOM to load, then check for scripts
+        document.addEventListener('DOMContentLoaded', function() {
+            debugLog('DOM loaded, checking for scripts...');
+            
+            // Set up event listeners
+            const signInButton = document.getElementById('signInButton');
+            const signOutButton = document.getElementById('signOutButton');
+            const eventForm = document.getElementById('eventForm');
+            
+            if (signInButton) {
+                signInButton.addEventListener('click', handleSignIn);
+            }
+            if (signOutButton) {
+                signOutButton.addEventListener('click', handleSignOut);
+            }
+            if (eventForm) {
+                eventForm.addEventListener('submit', handleFormSubmit);
+            }
+            
+            // Check if scripts are loaded
+            setTimeout(checkScriptsLoaded, 500);
+        });
     </script>
 </body>
 </html>
