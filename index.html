@@ -146,6 +146,16 @@
         .hidden {
             display: none;
         }
+
+        .debug-info {
+            background: #f5f5f5;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 12px;
+            color: #666;
+        }
     </style>
 </head>
 <body>
@@ -153,8 +163,9 @@
     <div id="signInSection" class="container">
         <h2>🔐 Sign In to Google Calendar</h2>
         <p>This app needs access to your Google Calendar to create events and reminders.</p>
-        <button id="signInButton">Sign In with Google</button>
+        <button id="signInButton" disabled>Loading...</button>
         <div id="authStatus" class="status hidden"></div>
+        <div id="debugInfo" class="debug-info"></div>
     </div>
 
     <!-- Main App Section -->
@@ -214,13 +225,13 @@
     </div>
 
     <!-- Google Calendar API -->
-    <script src="https://apis.google.com/js/api.js"></script>
-    <script src="https://accounts.google.com/gsi/client"></script>
+    <script src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
+    <script src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>
     
     <script>
         // Your Google API configuration
-        const CLIENT_ID = '517728613849-l39o30ebslg3f3rdnp65ot9nmuppi698.apps.googleusercontent.com'; // Replace with your actual client ID
-        const API_KEY = API_KEY; // Replace with your actual API key
+        const CLIENT_ID = '517728613849-l39o30ebslg3f3rdnp65ot9nmuppi698.apps.googleusercontent.com';
+        const API_KEY = 'AIzaSyDllfhpeSrZZyuFDGNLSBTtOPSC9nI9Rdg'; // Replace with your actual API key
         const DISCOVERY_DOC = 'https://www.googleapis.com/discovery/v1/apis/calendar/v3/rest';
         const SCOPES = 'https://www.googleapis.com/auth/calendar';
 
@@ -228,44 +239,77 @@
         let gapiInited = false;
         let gisInited = false;
 
+        function debugLog(message) {
+            console.log(message);
+            const debugInfo = document.getElementById('debugInfo');
+            debugInfo.innerHTML += new Date().toLocaleTimeString() + ': ' + message + '<br>';
+        }
+
         // Initialize Google APIs
         function gapiLoaded() {
+            debugLog('GAPI script loaded');
             gapi.load('client', initializeGapiClient);
         }
 
-async function initializeGapiClient() {
-    await gapi.client.init({
-        apiKey: API_KEY,
-        discoveryDocs: [DISCOVERY_DOC],
-    });
-    
-    // Explicitly load the Calendar API
-    await gapi.client.load('calendar', 'v3');
-    
-    gapiInited = true;
-    maybeEnableButtons();
+        async function initializeGapiClient() {
+            try {
+                debugLog('Initializing GAPI client...');
+                
+                if (!API_KEY || API_KEY === 'YOUR_API_KEY_HERE') {
+                    throw new Error('API Key not configured. Please set your Google Calendar API key.');
+                }
+
+                await gapi.client.init({
+                    apiKey: API_KEY,
+                    discoveryDocs: [DISCOVERY_DOC],
+                });
+                
+                // Explicitly load the Calendar API
+                await gapi.client.load('calendar', 'v3');
+                
+                gapiInited = true;
+                debugLog('GAPI client initialized successfully');
+                maybeEnableButtons();
+            } catch (error) {
+                debugLog('GAPI initialization error: ' + error.message);
+                showStatus('API initialization failed: ' + error.message, 'error');
+            }
         }
 
         function gisLoaded() {
-            tokenClient = google.accounts.oauth2.initTokenClient({
-                client_id: CLIENT_ID,
-                scope: SCOPES,
-                callback: (resp) => {
-                    if (resp.error !== undefined) {
-                        showStatus('Authentication failed: ' + resp.error, 'error');
-                        return;
-                    }
-                    showStatus('Successfully signed in!', 'success');
-                    showAppSection();
-                },
-            });
-            gisInited = true;
-            maybeEnableButtons();
+            debugLog('GIS script loaded');
+            try {
+                tokenClient = google.accounts.oauth2.initTokenClient({
+                    client_id: CLIENT_ID,
+                    scope: SCOPES,
+                    callback: (resp) => {
+                        debugLog('Token response received');
+                        if (resp.error !== undefined) {
+                            debugLog('Auth error: ' + resp.error);
+                            showStatus('Authentication failed: ' + resp.error, 'error');
+                            return;
+                        }
+                        debugLog('Authentication successful');
+                        showStatus('Successfully signed in!', 'success');
+                        showAppSection();
+                    },
+                });
+                gisInited = true;
+                debugLog('Token client initialized');
+                maybeEnableButtons();
+            } catch (error) {
+                debugLog('GIS initialization error: ' + error.message);
+                showStatus('Authentication setup failed: ' + error.message, 'error');
+            }
         }
 
         function maybeEnableButtons() {
+            debugLog(`Checking initialization status: GAPI=${gapiInited}, GIS=${gisInited}`);
             if (gapiInited && gisInited) {
-                document.getElementById('signInButton').disabled = false;
+                const signInButton = document.getElementById('signInButton');
+                signInButton.disabled = false;
+                signInButton.textContent = 'Sign In with Google';
+                debugLog('Sign-in button enabled');
             }
         }
 
@@ -295,19 +339,25 @@ async function initializeGapiClient() {
         }
 
         function handleSignIn() {
-            tokenClient.callback = async (resp) => {
-                if (resp.error !== undefined) {
-                    showStatus('Authentication failed', 'error');
-                    return;
-                }
-                showStatus('Successfully signed in!', 'success');
-                showAppSection();
-            };
+            debugLog('Sign-in button clicked');
+            
+            if (!tokenClient) {
+                debugLog('Token client not initialized');
+                showStatus('Authentication not ready. Please refresh the page.', 'error');
+                return;
+            }
 
-            if (gapi.client.getToken() === null) {
-                tokenClient.requestAccessToken({prompt: 'consent'});
-            } else {
-                tokenClient.requestAccessToken({prompt: ''});
+            try {
+                if (gapi.client.getToken() === null) {
+                    debugLog('Requesting new token with consent');
+                    tokenClient.requestAccessToken({prompt: 'consent'});
+                } else {
+                    debugLog('Requesting token refresh');
+                    tokenClient.requestAccessToken({prompt: ''});
+                }
+            } catch (error) {
+                debugLog('Sign-in error: ' + error.message);
+                showStatus('Sign-in failed: ' + error.message, 'error');
             }
         }
 
@@ -459,9 +509,8 @@ async function initializeGapiClient() {
         document.getElementById('signOutButton').addEventListener('click', handleSignOut);
         document.getElementById('eventForm').addEventListener('submit', handleFormSubmit);
 
-        // Initialize when page loads
-        gapiLoaded();
-        gisLoaded();
+        // Debug info on page load
+        debugLog('Page loaded, waiting for API initialization...');
     </script>
 </body>
 </html>
